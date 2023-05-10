@@ -1,0 +1,73 @@
+#!/bin/bash
+
+# Define the Node Exporter version to install
+read -p "Enter the Node Exporter version to install: " NE_VERSION
+
+# Define the Prometheus version to install
+read -p "Enter the Prometheus version to install: " PROM_VERSION
+
+# Define the servers to install Node Exporter on
+SERVERS=($(cat servers1.txt))
+
+# Loop through the servers and install Node Exporter on each one
+for SERVER in "${SERVERS[@]}"
+do
+  # SSH into the server and install Node Exporter
+  ssh $1@"$SERVER" "curl -LO https://github.com/prometheus/node_exporter/releases/download/v$NE_VERSION/node_exporter-$NE_VERSION.linux-amd64.tar.gz && tar -xvf node_exporter-$NE_VERSION.linux-amd64.tar.gz && sudo cp node_exporter-$NE_VERSION.linux-amd64/node_exporter /usr/local/bin/ && rm -rf node_exporter-$NE_VERSION.linux-amd64.tar.gz node_exporter-$NE_VERSION.linux-amd64/ && sudo -E nohup /usr/local/bin/node_exporter > logs 2>&1 &"
+  # Print a success message
+  echo "Node Exporter successfully installed and started on $SERVER"
+done
+
+# Check if Prometheus is already installed
+if command -v prometheus >/dev/null 2>&1; then
+  echo "Prometheus is already installed on  $(hostname)"
+else
+  # Download Prometheus
+  wget "https://github.com/prometheus/prometheus/releases/download/v$PROM_VERSION/prometheus-$PROM_VERSION.linux-amd64.tar.gz"
+  # Extract the binary
+  tar xvfz "prometheus-$PROM_VERSION.linux-amd64.tar.gz"
+  # Move the binary to /usr/local/bin/
+  sudo mv "prometheus-$PROM_VERSION.linux-amd64/prometheus" /usr/local/bin/
+  sudo mv "prometheus-$PROM_VERSION.linux-amd64/promtool" /usr/local/bin/
+  sudo mv "prometheus-$PROM_VERSION.linux-amd64/prometheus.yml" /opt/.
+  # Clean up
+  rm -rf "prometheus-$PROM_VERSION.linux-amd64.tar.gz" "prometheus-$PROM_VERSION.linux-amd64"
+  chmod +x /usr/local/bin/prometheus
+  echo "Prometheus installed successfully on  $(hostname)"
+fi
+
+# Define the path to the prometheus.yml file
+config_file="/opt/prometheus.yml"
+
+# Define the path to the servers.txt file
+servers_file="/opt/servers2.txt"
+
+# Read the list of servers from the file
+servers=($(cat "$servers_file"))
+
+# Loop through the list of servers and add them to the config file if they are not already present
+for server in "${servers[@]}"
+do
+    # Check if the server is already in the config file
+    if grep -q "$server" "$config_file"; then
+        echo "$server is already in $config_file, skipping."
+    else
+        # Append the server to the targets field
+        echo "Adding $server to $config_file..."
+        sed -i "/- targets:/ s/\]/,'$server:9100'\]/" "$config_file"
+    fi
+done
+
+#Connecting Prometheus to Kafka
+
+# Pull the Docker image
+sudo docker pull telefonica/prometheus-kafka-adapter:1.8.0
+
+# Run the Docker container with the specified command
+sudo docker run -d -e KAFKA_BROKER_LIST=192.168.7.86:9092 -e KAFKA_TOPIC=prometheus_data -e PORT=4545 --network host -$
+# Add lines in prometheus.yml file.
+echo "remote_write:
+  - url: "http://192.168.7.22:4545/receive"" >> /opt/prometheus.yml
+
+# Start Prometheus to run in background
+nohup prometheus > logs&
